@@ -1,21 +1,3 @@
-use this command. Please click on /help for more information.")
-
-# Start polling with error handling
-while True:
-    try:
-        bot.polling()
-    except requests.exceptions.ReadTimeout:
-        print("Read timeout occurred, retrying in 15 seconds...")
-        time.sleep(15)
-    except requests.exceptions.ConnectionError:
-        print("Connection error occurred, retrying in 15 seconds...")
-        time.sleep(15)
-    except telebot.apihelper.ApiTelegramException as e:
-        print(f"Telegram API error: {e}")
-        time.sleep(15)
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        time.sleep(15)
 import telebot
 from googlesearch import search
 import requests
