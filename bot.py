@@ -1,13 +1,28 @@
+use this command. Please click on /help for more information.")
+
+# Start polling with error handling
+while True:
+    try:
+        bot.polling()
+    except requests.exceptions.ReadTimeout:
+        print("Read timeout occurred, retrying in 15 seconds...")
+        time.sleep(15)
+    except requests.exceptions.ConnectionError:
+        print("Connection error occurred, retrying in 15 seconds...")
+        time.sleep(15)
+    except telebot.apihelper.ApiTelegramException as e:
+        print(f"Telegram API error: {e}")
+        time.sleep(15)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        time.sleep(15)
 import telebot
+from googlesearch import search
 import requests
 import time
 
-# Replace with your actual credentials
-BOT_TOKEN = '6945433492:AAHPvr6R1tqKiyyzAtZ2N2kcOy6AncEe5QY'
-GOOGLE_API_KEY = 'AIzaSyBiBPVUGk-JARig_YklRDMbebm2vKhUY2w'
-CSE_ID = 'your_custom_search_engine_id'
-
-bot = telebot.TeleBot(BOT_TOKEN)
+# Replace 'YOUR_TELEGRAM_BOT_TOKEN' with your actual Telegram bot token
+bot = telebot.TeleBot('7261872696:AAEH1K74ieC8mLSyt7Uj2H1w_DBSnchEto4')
 
 # Owner ID
 OWNER_ID = 5460343986
@@ -17,12 +32,12 @@ CHANNEL_USERNAME = "@FALCON_SECURITY"
 
 # Dictionary to store authorized users
 authorized_users = {OWNER_ID}
+proxy_api_url = 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all'
 
 # Dictionary to store search results for each user
 user_search_results = {}
 
 # Function to get proxies from the API
-proxy_api_url = 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all'
 def get_proxies():
     response = requests.get(proxy_api_url)
     proxies = response.text.splitlines()
@@ -37,16 +52,6 @@ def is_user_member(user_id):
         return member_status in ['member', 'administrator', 'creator']
     except:
         return False
-
-# Function to perform Google search using Custom Search API
-def google_search(query, num_results=10):
-    search_url = f"https://www.googleapis.com/customsearch/v1?key={GOOGLE_API_KEY}&cx={CSE_ID}&q={query}&num={num_results}"
-    response = requests.get(search_url)
-    data = response.json()
-    results = []
-    for item in data.get('items', []):
-        results.append(item['link'])
-    return results
 
 # Welcome message
 @bot.message_handler(commands=['start'])
@@ -80,7 +85,7 @@ def provide_results_txt(message):
     if message.from_user.id in authorized_users:
         if len(message.text.split()) > 1:
             query = message.text.split(' ', 1)[1]
-            results = google_search(query, num_results=80)
+            results = list(search(query, num=80, stop=300, pause=2))
             txt_result = "\n".join(results)
             for i in range(0, len(txt_result), MAX_MESSAGE_LENGTH):
                 bot.send_message(message.chat.id, txt_result[i:i + MAX_MESSAGE_LENGTH])
@@ -103,7 +108,7 @@ def search_google(message):
             return
 
         query = message.text.split(' ', 1)[1]
-        results = google_search(query, num_results=10)
+        results = list(search(query, num=80, stop=300, pause=2))
 
         if results:
             user_search_results[message.from_user.id] = {'query': query, 'results': results, 'index': 0}
@@ -113,8 +118,7 @@ def search_google(message):
     else:
         bot.reply_to(message, "You are not authorized to use this command.")
 
-# Function to send search results in parts
-def send_search_results(chat_id, user_id, num_results=10):
+def send_search_results(chat_id, user_id, num_results=20):
     if user_id in user_search_results:
         user_data = user_search_results[user_id]
         results = user_data['results']
@@ -125,13 +129,9 @@ def send_search_results(chat_id, user_id, num_results=10):
         for i, result in enumerate(results[start_index:end_index], start=start_index + 1):
             response += "{}. {}\n".format(i, result)
 
-        # If the response is too long, send it in chunks
-        if len(response) > MAX_MESSAGE_LENGTH:
-            parts = [response[i:i + MAX_MESSAGE_LENGTH] for i in range(0, len(response), MAX_MESSAGE_LENGTH)]
-            for part in parts:
-                bot.send_message(chat_id, part)
-        else:
-            bot.send_message(chat_id, response)
+        # Split the response if it's too long
+        for i in range(0, len(response), MAX_MESSAGE_LENGTH):
+            bot.send_message(chat_id, response[i:i + MAX_MESSAGE_LENGTH])
 
         user_data['index'] = end_index
 
@@ -210,9 +210,6 @@ while True:
         time.sleep(15)
     except requests.exceptions.ConnectionError:
         print("Connection error occurred, retrying in 15 seconds...")
-        time.sleep(15)
-    except telebot.apihelper.ApiTelegramException as e:
-        print(f"Telegram API error: {e}")
         time.sleep(15)
     except Exception as e:
         print(f"An error occurred: {e}")
