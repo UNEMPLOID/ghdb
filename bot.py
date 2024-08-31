@@ -187,7 +187,7 @@ def send_search_results(chat_id, user_id, file_path):
         
         if end_index < RESULTS_PER_USER:
             markup = telebot.types.InlineKeyboardMarkup()
-            more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more_{file_path}_{end_index}_{user_id}')
+            more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more:{file_path}:{end_index}:{user_id}')
             markup.add(more_button)
             bot.send_message(chat_id, "Click 'More' for additional results.", reply_markup=markup)
         
@@ -196,12 +196,13 @@ def send_search_results(chat_id, user_id, file_path):
             file.writelines(lines[end_index:])
 
 # Handle 'More' button callback
-@bot.callback_query_handler(func=lambda call: call.data.startswith('more_'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('more:'))
 def handle_more_results(call):
     try:
-        file_path, start_index, user_id = call.data[5:].split('_', 2)
-        user_id = int(user_id)
-        start_index = int(start_index)
+        data = call.data.split(':', 3)
+        file_path = data[1]
+        start_index = int(data[2])
+        user_id = int(data[3])
         
         if user_id in user_search_results and user_search_results[user_id]['file_path'] == file_path:
             with open(file_path, 'r') as file:
@@ -224,7 +225,7 @@ def handle_more_results(call):
             
             if end_index < RESULTS_PER_USER:
                 markup = telebot.types.InlineKeyboardMarkup()
-                more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more_{file_path}_{end_index}_{user_id}')
+                more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more:{file_path}:{end_index}:{user_id}')
                 markup.add(more_button)
                 bot.send_message(call.message.chat.id, "Click 'More' for additional results.", reply_markup=markup)
             
