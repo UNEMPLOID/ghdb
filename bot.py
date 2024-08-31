@@ -9,8 +9,9 @@ bot = telebot.TeleBot('7261872696:AAEH1K74ieC8mLSyt7Uj2H1w_DBSnchEto4')
 # Owner ID
 OWNER_ID = 5460343986
 
-# Channel username
-CHANNEL_USERNAME = "@FALCON_SECURITY"
+# Channel and group usernames
+FORCE_JOIN_CHANNELS = ["@FALCON_SECURITY", "@Bot_Colony", "@Found_Us"]
+FORCE_JOIN_GROUPS = ["@Indian_Hacker_Group"]
 
 # Dictionary to store authorized users
 authorized_users = {OWNER_ID}
@@ -27,18 +28,54 @@ def get_proxies():
 
 proxies = get_proxies()
 
-# Function to check if a user is a member of the channel
+# Function to check if a user is a member of the required channels/groups
 def is_user_member(user_id):
-    try:
-        member_status = bot.get_chat_member(CHANNEL_USERNAME, user_id).status
-        return member_status in ['member', 'administrator', 'creator']
-    except:
-        return False
+    for channel in FORCE_JOIN_CHANNELS:
+        try:
+            member_status = bot.get_chat_member(channel, user_id).status
+            if member_status not in ['member', 'administrator', 'creator']:
+                return False
+        except:
+            return False
+    for group in FORCE_JOIN_GROUPS:
+        try:
+            member_status = bot.get_chat_member(group, user_id).status
+            if member_status not in ['member', 'administrator', 'creator']:
+                return False
+        except:
+            return False
+    return True
 
 # Welcome message
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "Welcome to the Google Dork Search Bot! Use /help to see available commands.")
+    markup = telebot.types.InlineKeyboardMarkup()
+    
+    # Add inline buttons for each channel and group
+    for channel in FORCE_JOIN_CHANNELS:
+        button = telebot.types.InlineKeyboardButton(channel, url=f'https://t.me/{channel[1:]}')
+        markup.add(button)
+    for group in FORCE_JOIN_GROUPS:
+        button = telebot.types.InlineKeyboardButton(group, url=f'https://t.me/{group[1:]}')
+        markup.add(button)
+    
+    # Add a verification button
+    verify_button = telebot.types.InlineKeyboardButton("Verify", callback_data='verify')
+    markup.add(verify_button)
+    
+    bot.send_message(message.chat.id, "Please join all the required channels and groups first. After joining, click the 'Verify' button.", reply_markup=markup)
+
+# Verify button callback
+@bot.callback_query_handler(func=lambda call: call.data == 'verify')
+def verify_user(call):
+    user_id = call.from_user.id
+    if is_user_member(user_id):
+        bot.send_message(call.message.chat.id, "Thank you for joining all the required channels and groups! You can now use the bot. Use /help to see available commands.")
+        # Optionally, add the user to the authorized list if you want to
+        authorized_users.add(user_id)
+    else:
+        bot.send_message(call.message.chat.id, "Please join all the required channels and groups first before clicking 'Verify'.")
+    bot.answer_callback_query(call.id)
 
 # Help command
 @bot.message_handler(commands=['help'])
@@ -61,7 +98,7 @@ MAX_MESSAGE_LENGTH = 4096  # Maximum length of a message that Telegram allows
 @bot.message_handler(commands=['txt'])
 def provide_results_txt(message):
     if not is_user_member(message.from_user.id):
-        bot.reply_to(message, f"You must join {CHANNEL_USERNAME} to use this bot.")
+        bot.reply_to(message, "You must join the required channels and groups to use this bot.")
         return
 
     if message.from_user.id in authorized_users:
@@ -81,7 +118,7 @@ def provide_results_txt(message):
 @bot.message_handler(commands=['search'])
 def search_google(message):
     if not is_user_member(message.from_user.id):
-        bot.reply_to(message, f"You must join {CHANNEL_USERNAME} to use this bot.")
+        bot.reply_to(message, "You must join the required channels and groups to use this bot.")
         return
 
     if message.from_user.id in authorized_users:
