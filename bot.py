@@ -126,7 +126,7 @@ Available commands:
 MAX_MESSAGE_LENGTH = 4096  # Maximum length of a message that Telegram allows
 RESULTS_PER_PAGE = 20  # Number of results per page
 RESULTS_PER_USER = 100  # Total number of results each user can get
-TOTAL_RESULTS = 500  # Total number of results to fetch
+TOTAL_RESULTS = 250  # Total number of results to fetch
 
 # Command handler to search Google
 @bot.message_handler(commands=['search'])
