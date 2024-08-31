@@ -1,7 +1,7 @@
 import telebot
 from googlesearch import search
 import requests
-import time
+import os
 from pymongo import MongoClient
 from datetime import datetime
 
@@ -113,7 +113,7 @@ def verify_user(call):
 def send_help(message):
     help_message = """
 Available commands:
-/search <query> - Search Google with the given query.
+/search <query> - Search Google with the given query and get 500 links. Provides 100 links per user with a 'More' button to fetch more.
 /add <user_id> - Add a user to the authorized list (Owner only).
 /remove <user_id> - Remove a user from the authorized list (Owner only).
 /broadcast <message> - Send a broadcast message to all authorized users (Owner only).
@@ -124,27 +124,9 @@ Available commands:
     bot.reply_to(message, help_message)
 
 MAX_MESSAGE_LENGTH = 4096  # Maximum length of a message that Telegram allows
-
-# Command handler to provide search results in TXT format
-@bot.message_handler(commands=['txt'])
-def provide_results_txt(message):
-    if not is_user_member(message.from_user.id):
-        bot.reply_to(message, "You must join the required channels and groups to use this bot.")
-        return
-
-    if message.from_user.id in authorized_users:
-        if len(message.text.split()) > 1:
-            query = message.text.split(' ', 1)[1]
-            results = list(search(query, num_results=80))
-            txt_result = "\n".join(results)
-            for i in range(0, len(txt_result), MAX_MESSAGE_LENGTH):
-                bot.send_message(message.chat.id, txt_result[i:i + MAX_MESSAGE_LENGTH])
-            bot.reply_to(message, "Search results in TXT format have been sent.")
-            log_user_action(message.from_user.id, 'searched', f"Query: {query}")
-        else:
-            bot.reply_to(message, "Please provide a query to search. Example: /txt your_query_here")
-    else:
-        bot.reply_to(message, "You are not authorized to use this command.")
+RESULTS_PER_PAGE = 20  # Number of results per page
+RESULTS_PER_USER = 100  # Total number of results each user can get
+TOTAL_RESULTS = 500  # Total number of results to fetch
 
 # Command handler to search Google
 @bot.message_handler(commands=['search'])
@@ -159,46 +141,97 @@ def search_google(message):
             return
 
         query = message.text.split(' ', 1)[1]
-        results = list(search(query, num_results=80))
+        file_path = f"search_results_{query}.txt"
 
-        if results:
-            user_search_results[message.from_user.id] = {'query': query, 'results': results, 'index': 0}
-            send_search_results(message.chat.id, message.from_user.id)
-            log_user_action(message.from_user.id, 'searched', f"Query: {query}")
+        if os.path.exists(file_path):
+            # File exists, load and send results
+            send_search_results(message.chat.id, message.from_user.id, file_path)
         else:
-            bot.reply_to(message, "No results found for '{}'. Please try a different query.".format(query))
+            # Perform search and save to file
+            results = list(search(query, num_results=TOTAL_RESULTS))
+            with open(file_path, 'w') as file:
+                for result in results:
+                    file.write(result + '\n')
+
+            user_search_results[message.from_user.id] = {
+                'query': query,
+                'file_path': file_path,
+                'index': 0
+            }
+
+            send_search_results(message.chat.id, message.from_user.id, file_path)
+            log_user_action(message.from_user.id, 'searched', f"Query: {query}")
     else:
         bot.reply_to(message, "You are not authorized to use this command.")
 
-def send_search_results(chat_id, user_id, num_results=20):
-    if user_id in user_search_results:
-        user_data = user_search_results[user_id]
-        results = user_data['results']
+def send_search_results(chat_id, user_id, file_path):
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            lines = file.readlines()
+        
+        user_data = user_search_results.get(user_id, {'index': 0})
         start_index = user_data['index']
-        end_index = min(start_index + num_results, len(results))
+        end_index = min(start_index + RESULTS_PER_PAGE, RESULTS_PER_USER)
+        
+        results_to_send = lines[start_index:end_index]
+        response = "Search results:\n"
+        for i, result in enumerate(results_to_send, start=start_index + 1):
+            response += "{}. {}\n".format(i, result.strip())
 
-        response = "Search results for '{}':\n".format(user_data['query'])
-        for i, result in enumerate(results[start_index:end_index], start=start_index + 1):
-            response += "{}. {}\n".format(i, result)
-
-        # Split the response if it's too long
+        # Send results in chunks if the response is too long
         for i in range(0, len(response), MAX_MESSAGE_LENGTH):
             bot.send_message(chat_id, response[i:i + MAX_MESSAGE_LENGTH])
-
+        
         user_data['index'] = end_index
-
-        if end_index < len(results):
+        user_search_results[user_id] = user_data
+        
+        if end_index < RESULTS_PER_USER:
             markup = telebot.types.InlineKeyboardMarkup()
-            more_button = telebot.types.InlineKeyboardButton("More", callback_data='more')
+            more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more_{file_path}_{user_id}')
             markup.add(more_button)
             bot.send_message(chat_id, "Click 'More' for additional results.", reply_markup=markup)
+        
+        # Remove the links that were sent to the user
+        with open(file_path, 'w') as file:
+            file.writelines(lines[end_index:])
 
-@bot.callback_query_handler(func=lambda call: call.data == 'more')
-def handle_more(call):
-    user_id = call.from_user.id
-    if user_id in user_search_results:
-        send_search_results(call.message.chat.id, user_id)
-    bot.answer_callback_query(call.id)
+# Handle 'More' button callback
+@bot.callback_query_handler(func=lambda call: call.data.startswith('more_'))
+def handle_more_results(call):
+    file_path, user_id = call.data[5:].split('_', 1)
+    user_id = int(user_id)
+    
+    if user_id in user_search_results and user_search_results[user_id]['file_path'] == file_path:
+        send_search_results(call.message.chat.id, user_id, file_path)
+        bot.answer_callback_query(call.id)
+
+# Command handler to convert search results to a text file
+@bot.message_handler(commands=['txt'])
+def get_search_results_txt(message):
+    if not is_user_member(message.from_user.id):
+        bot.reply_to(message, "You must join the required channels and groups to use this bot.")
+        return
+
+    if len(message.text.split()) == 1:
+        bot.reply_to(message, "Please provide a query to search.")
+        return
+    
+    query = message.text.split(' ', 1)[1]
+    file_path = f"search_results_{query}.txt"
+
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            content = file.read()
+
+        with open(f"{query}_results.txt", 'w') as file:
+            file.write(content)
+
+        with open(f"{query}_results.txt", 'rb') as file:
+            bot.send_document(message.chat.id, file)
+        
+        log_user_action(message.from_user.id, 'converted_search_results', f"Query: {query}")
+    else:
+        bot.reply_to(message, "No search results found for this query. Please perform a search first.")
 
 # Command handler to add user
 @bot.message_handler(commands=['add'])
@@ -207,9 +240,12 @@ def add_user(message):
         if len(message.text.split()) == 2:
             try:
                 user_id = int(message.text.split()[1])
-                authorized_users.add(user_id)
-                bot.reply_to(message, f"User {user_id} added to the authorized list.")
-                log_user_action(user_id, 'added_to_authorized_list')
+                if user_id not in authorized_users:
+                    authorized_users.add(user_id)
+                    bot.reply_to(message, f"User {user_id} added to the authorized list.")
+                    log_user_action(user_id, 'added_to_authorized_list')
+                else:
+                    bot.reply_to(message, "User ID already in the authorized list.")
             except ValueError:
                 bot.reply_to(message, "Invalid user ID format. Please provide a numeric user ID.")
         else:
