@@ -4,6 +4,7 @@ import requests
 import os
 from pymongo import MongoClient
 from datetime import datetime
+import urllib.parse
 
 # Initialize MongoDB client
 mongo_client = MongoClient('mongodb+srv://admin22:admin22@cluster0.9lqp0ci.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
@@ -142,10 +143,11 @@ def search_google(message):
 
         query = message.text.split(' ', 1)[1]
         file_path = f"search_results_{query}.txt"
+        safe_file_path = urllib.parse.quote(file_path)  # Encode file path
 
         if os.path.exists(file_path):
             # File exists, load and send results
-            send_search_results(message.chat.id, message.from_user.id, file_path)
+            send_search_results(message.chat.id, message.from_user.id, safe_file_path)
         else:
             # Perform search and save to file
             results = list(search(query, num_results=TOTAL_RESULTS))
@@ -155,16 +157,18 @@ def search_google(message):
 
             user_search_results[message.from_user.id] = {
                 'query': query,
-                'file_path': file_path,
+                'file_path': safe_file_path,
                 'index': 0
             }
 
-            send_search_results(message.chat.id, message.from_user.id, file_path)
+            send_search_results(message.chat.id, message.from_user.id, safe_file_path)
             log_user_action(message.from_user.id, 'searched', f"Query: {query}")
     else:
         bot.reply_to(message, "You are not authorized to use this command.")
 
-def send_search_results(chat_id, user_id, file_path):
+def send_search_results(chat_id, user_id, safe_file_path):
+    file_path = urllib.parse.unquote(safe_file_path)  # Decode file path
+
     if os.path.exists(file_path):
         with open(file_path, 'r') as file:
             lines = file.readlines()
@@ -187,7 +191,7 @@ def send_search_results(chat_id, user_id, file_path):
         
         if end_index < RESULTS_PER_USER:
             markup = telebot.types.InlineKeyboardMarkup()
-            more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more:{file_path}:{end_index}:{user_id}')
+            more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more:{safe_file_path}:{end_index}:{user_id}')
             markup.add(more_button)
             bot.send_message(chat_id, "Click 'More' for additional results.", reply_markup=markup)
         
@@ -203,11 +207,13 @@ def handle_more_results(call):
         if len(data) != 4:
             raise ValueError("Invalid callback data format")
 
-        file_path = data[1]
+        safe_file_path = data[1]
         start_index = int(data[2])
         user_id = int(data[3])
+
+        file_path = urllib.parse.unquote(safe_file_path)  # Decode file path
         
-        if user_id in user_search_results and user_search_results[user_id]['file_path'] == file_path:
+        if user_id in user_search_results and user_search_results[user_id]['file_path'] == safe_file_path:
             with open(file_path, 'r') as file:
                 lines = file.readlines()
 
@@ -228,7 +234,7 @@ def handle_more_results(call):
             
             if end_index < RESULTS_PER_USER:
                 markup = telebot.types.InlineKeyboardMarkup()
-                more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more:{file_path}:{end_index}:{user_id}')
+                more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more:{safe_file_path}:{end_index}:{user_id}')
                 markup.add(more_button)
                 bot.send_message(call.message.chat.id, "Click 'More' for additional results.", reply_markup=markup)
             
