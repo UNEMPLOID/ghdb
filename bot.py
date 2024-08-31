@@ -62,10 +62,10 @@ def log_user_action(user_id, action, extra_info=""):
         'user_id': user_id,
         'action': action,
         'extra_info': extra_info,
-        'timestamp': datetime.utcnow()
+        'timestamp': datetime.now(datetime.timezone.utc)  # Updated to use timezone-aware datetime
     }
     logs_collection.insert_one(log_entry)
-    log_message = f"Action: {action}\nUser ID: {user_id}\nExtra Info: {extra_info}\nTimestamp: {datetime.utcnow()}"
+    log_message = f"Action: {action}\nUser ID: {user_id}\nExtra Info: {extra_info}\nTimestamp: {datetime.now(datetime.timezone.utc)}"  # Updated to use timezone-aware datetime
     bot.send_message(LOG_GROUP_ID, log_message)
 
 # Welcome message with inline button layout
