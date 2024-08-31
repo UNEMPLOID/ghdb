@@ -3,7 +3,7 @@ from googlesearch import search
 import requests
 import os
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Initialize MongoDB client
 mongo_client = MongoClient('mongodb+srv://admin22:admin22@cluster0.9lqp0ci.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
@@ -32,9 +32,14 @@ user_search_results = {}
 
 # Function to get proxies from the API
 def get_proxies():
-    response = requests.get(proxy_api_url)
-    proxies = response.text.splitlines()
-    return proxies
+    try:
+        response = requests.get(proxy_api_url)
+        response.raise_for_status()  # Ensure we notice bad responses
+        proxies = response.text.splitlines()
+        return proxies
+    except requests.RequestException as e:
+        print(f"Error fetching proxies: {e}")
+        return []
 
 proxies = get_proxies()
 
@@ -45,14 +50,14 @@ def is_user_member(user_id):
             member_status = bot.get_chat_member(channel, user_id).status
             if member_status not in ['member', 'administrator', 'creator']:
                 return False
-        except:
+        except telebot.apihelper.ApiException:
             return False
     for group in FORCE_JOIN_GROUPS:
         try:
             member_status = bot.get_chat_member(group, user_id).status
             if member_status not in ['member', 'administrator', 'creator']:
                 return False
-        except:
+        except telebot.apihelper.ApiException:
             return False
     return True
 
@@ -62,26 +67,22 @@ def log_user_action(user_id, action, extra_info=""):
         'user_id': user_id,
         'action': action,
         'extra_info': extra_info,
-        'timestamp': datetime.now(datetime.timezone.utc)  # Updated to use timezone-aware datetime
+        'timestamp': datetime.now(timezone.utc)
     }
     logs_collection.insert_one(log_entry)
-    log_message = f"Action: {action}\nUser ID: {user_id}\nExtra Info: {extra_info}\nTimestamp: {datetime.now(datetime.timezone.utc)}"  # Updated to use timezone-aware datetime
+    log_message = f"Action: {action}\nUser ID: {user_id}\nExtra Info: {extra_info}\nTimestamp: {datetime.now(timezone.utc)}"
     bot.send_message(LOG_GROUP_ID, log_message)
 
 # Welcome message with inline button layout
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = telebot.types.InlineKeyboardMarkup(row_width=2)
-    
-    # Add inline buttons for each channel and group
     buttons = [
         telebot.types.InlineKeyboardButton("FALCON SECURITY", url='https://t.me/FALCON_SECURITY'),
         telebot.types.InlineKeyboardButton("BOT COLONY", url='https://t.me/Bot_Colony'),
         telebot.types.InlineKeyboardButton("INDIAN HACKER", url='https://t.me/Indian_Hacker_Group'),
         telebot.types.InlineKeyboardButton("INDIAN HACKER GROUP", url='https://t.me/Indian_Hacker_Group')
     ]
-    
-    # Arrange buttons in the specified format
     markup.add(buttons[0], buttons[1])  # Button1 : Button2
     markup.add(buttons[2], buttons[3])  # Button3 : Button4
 
@@ -101,7 +102,6 @@ def verify_user(call):
     user_id = call.from_user.id
     if is_user_member(user_id):
         bot.send_message(call.message.chat.id, "Thank you for joining all the required channels and groups! You can now use the bot. Use /help to see available commands.")
-        # Optionally, add the user to the authorized list if you want to
         authorized_users.add(user_id)
         log_user_action(user_id, 'verified')
     else:
