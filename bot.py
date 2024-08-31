@@ -20,6 +20,9 @@ OWNER_ID = 5460343986
 FORCE_JOIN_CHANNELS = ["@FALCON_SECURITY", "@Bot_Colony"]
 FORCE_JOIN_GROUPS = ["@Indian_Hacker_Group"]
 
+# Group ID for logging
+LOG_GROUP_ID = -1002155266073
+
 # Dictionary to store authorized users
 authorized_users = {OWNER_ID}
 proxy_api_url = 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all'
@@ -53,20 +56,23 @@ def is_user_member(user_id):
             return False
     return True
 
-# Log user actions to MongoDB
-def log_user_action(user_id, action):
+# Log user actions to MongoDB and log group
+def log_user_action(user_id, action, extra_info=""):
     log_entry = {
         'user_id': user_id,
         'action': action,
+        'extra_info': extra_info,
         'timestamp': datetime.utcnow()
     }
     logs_collection.insert_one(log_entry)
+    log_message = f"Action: {action}\nUser ID: {user_id}\nExtra Info: {extra_info}\nTimestamp: {datetime.utcnow()}"
+    bot.send_message(LOG_GROUP_ID, log_message)
 
 # Welcome message with inline button layout
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = telebot.types.InlineKeyboardMarkup(row_width=2)
-
+    
     # Add inline buttons for each channel and group
     buttons = [
         telebot.types.InlineKeyboardButton("FALCON SECURITY", url='https://t.me/FALCON_SECURITY'),
@@ -74,7 +80,7 @@ def send_welcome(message):
         telebot.types.InlineKeyboardButton("INDIAN HACKER", url='https://t.me/Indian_Hacker_Group'),
         telebot.types.InlineKeyboardButton("INDIAN HACKER GROUP", url='https://t.me/Indian_Hacker_Group')
     ]
-
+    
     # Arrange buttons in the specified format
     markup.add(buttons[0], buttons[1])  # Button1 : Button2
     markup.add(buttons[2], buttons[3])  # Button3 : Button4
@@ -82,10 +88,10 @@ def send_welcome(message):
     # Add a verification button
     verify_button = telebot.types.InlineKeyboardButton("VERIFY", callback_data='verify')
     markup.add(verify_button)
-
+    
     # Send the image with the message
     bot.send_photo(message.chat.id, photo='https://i.ibb.co/Jcf4gyy/20240126-165040-0000.png', caption="Please join all the required channels and groups first. After joining, click the 'VERIFY' button.", reply_markup=markup)
-
+    
     # Log the start command
     log_user_action(message.from_user.id, 'started_bot')
 
@@ -129,11 +135,12 @@ def provide_results_txt(message):
     if message.from_user.id in authorized_users:
         if len(message.text.split()) > 1:
             query = message.text.split(' ', 1)[1]
-            results = list(search(query, num=80, stop=300, pause=2))
+            results = list(search(query, num_results=80))
             txt_result = "\n".join(results)
             for i in range(0, len(txt_result), MAX_MESSAGE_LENGTH):
                 bot.send_message(message.chat.id, txt_result[i:i + MAX_MESSAGE_LENGTH])
             bot.reply_to(message, "Search results in TXT format have been sent.")
+            log_user_action(message.from_user.id, 'searched', f"Query: {query}")
         else:
             bot.reply_to(message, "Please provide a query to search. Example: /txt your_query_here")
     else:
@@ -152,11 +159,12 @@ def search_google(message):
             return
 
         query = message.text.split(' ', 1)[1]
-        results = list(search(query, num=80, stop=300, pause=2))
+        results = list(search(query, num_results=80))
 
         if results:
             user_search_results[message.from_user.id] = {'query': query, 'results': results, 'index': 0}
             send_search_results(message.chat.id, message.from_user.id)
+            log_user_action(message.from_user.id, 'searched', f"Query: {query}")
         else:
             bot.reply_to(message, "No results found for '{}'. Please try a different query.".format(query))
     else:
@@ -196,68 +204,69 @@ def handle_more(call):
 @bot.message_handler(commands=['add'])
 def add_user(message):
     if message.from_user.id == OWNER_ID:
-        if len(message.text.split()) > 1:
-            user_id = message.text.split(' ', 1)[1]
-            authorized_users.add(int(user_id))
-            bot.reply_to(message, "User {} has been added.".format(user_id))
-            log_user_action(message.from_user.id, 'added_user')
+        if len(message.text.split()) == 2:
+            try:
+                user_id = int(message.text.split()[1])
+                authorized_users.add(user_id)
+                bot.reply_to(message, f"User {user_id} added to the authorized list.")
+                log_user_action(user_id, 'added_to_authorized_list')
+            except ValueError:
+                bot.reply_to(message, "Invalid user ID format. Please provide a numeric user ID.")
         else:
-            bot.reply_to(message, "Please provide the user ID to add. Example: /add user_id")
+            bot.reply_to(message, "Please provide the user ID to add.")
     else:
-        bot.reply_to(message, "Only the owner can use this command.")
+        bot.reply_to(message, "You are not authorized to use this command.")
 
 # Command handler to remove user
 @bot.message_handler(commands=['remove'])
 def remove_user(message):
     if message.from_user.id == OWNER_ID:
-        if len(message.text.split()) > 1:
-            user_id = message.text.split(' ', 1)[1]
-            if int(user_id) in authorized_users:
-                authorized_users.remove(int(user_id))
-                bot.reply_to(message, "User {} has been removed.".format(user_id))
-                log_user_action(message.from_user.id, 'removed_user')
-            else:
-                bot.reply_to(message, "User {} is not in the authorized list.".format(user_id))
+        if len(message.text.split()) == 2:
+            try:
+                user_id = int(message.text.split()[1])
+                if user_id in authorized_users:
+                    authorized_users.remove(user_id)
+                    bot.reply_to(message, f"User {user_id} removed from the authorized list.")
+                    log_user_action(user_id, 'removed_from_authorized_list')
+                else:
+                    bot.reply_to(message, "User ID not found in the authorized list.")
+            except ValueError:
+                bot.reply_to(message, "Invalid user ID format. Please provide a numeric user ID.")
         else:
-            bot.reply_to(message, "Please provide the user ID to remove. Example: /remove user_id")
+            bot.reply_to(message, "Please provide the user ID to remove.")
     else:
-        bot.reply_to(message, "Only the owner can use this command.")
+        bot.reply_to(message, "You are not authorized to use this command.")
 
-# Command handler to broadcast message
+# Command handler to broadcast a message
 @bot.message_handler(commands=['broadcast'])
 def broadcast_message(message):
     if message.from_user.id == OWNER_ID:
         if len(message.text.split()) > 1:
-            text = message.text.split(' ', 1)[1]
+            broadcast_text = message.text.split(' ', 1)[1]
             for user_id in authorized_users:
-                bot.send_message(user_id, text)
-            bot.reply_to(message, "Broadcast sent to {} users.".format(len(authorized_users)))
-            log_user_action(message.from_user.id, 'broadcasted_message')
+                try:
+                    bot.send_message(user_id, broadcast_text)
+                except Exception as e:
+                    print(f"Failed to send message to user {user_id}: {e}")
+            bot.reply_to(message, "Broadcast message sent to all authorized users.")
+            log_user_action(message.from_user.id, 'broadcast_message', broadcast_text)
         else:
-            bot.reply_to(message, "Please provide a message to broadcast. Example: /broadcast your_message_here")
+            bot.reply_to(message, "Please provide a message to broadcast.")
     else:
-        bot.reply_to(message, "Only the owner can use this command.")
+        bot.reply_to(message, "You are not authorized to use this command.")
 
-# Command handler to show all authorized users
+# Command handler to show authorized users
 @bot.message_handler(commands=['users'])
 def show_users(message):
     if message.from_user.id == OWNER_ID:
-        user_list = '\n'.join(str(user_id) for user_id in authorized_users)
-        response = f"List of authorized users:\n{user_list}"
-        bot.reply_to(message, response)
+        if authorized_users:
+            users_list = "\n".join(str(user_id) for user_id in authorized_users)
+            bot.reply_to(message, "Authorized users:\n" + users_list)
+        else:
+            bot.reply_to(message, "No authorized users found.")
     else:
-        bot.reply_to(message, "Only the owner can use this command. Please click on /help for more information.")
+        bot.reply_to(message, "You are not authorized to use this command.")
 
-# Start polling with error handling
-while True:
-    try:
-        bot.polling()
-    except requests.exceptions.ReadTimeout:
-        print("Read timeout occurred, retrying in 15 seconds...")
-        time.sleep(15)
-    except requests.exceptions.ConnectionError:
-        print("Connection error occurred, retrying in 15 seconds...")
-        time.sleep(15)
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        time.sleep(15)
+# Polling the bot
+if __name__ == '__main__':
+    bot.polling(none_stop=True)
