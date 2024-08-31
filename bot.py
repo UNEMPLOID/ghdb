@@ -2,6 +2,13 @@ import telebot
 from googlesearch import search
 import requests
 import time
+from pymongo import MongoClient
+from datetime import datetime
+
+# Initialize MongoDB client
+mongo_client = MongoClient('mongodb+srv://admin22:admin22@cluster0.9lqp0ci.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
+db = mongo_client.bot_logs
+logs_collection = db.logs
 
 # Replace 'YOUR_TELEGRAM_BOT_TOKEN' with your actual Telegram bot token
 bot = telebot.TeleBot('7261872696:AAEH1K74ieC8mLSyt7Uj2H1w_DBSnchEto4')
@@ -10,7 +17,7 @@ bot = telebot.TeleBot('7261872696:AAEH1K74ieC8mLSyt7Uj2H1w_DBSnchEto4')
 OWNER_ID = 5460343986
 
 # Channel and group usernames
-FORCE_JOIN_CHANNELS = ["@FALCON_SECURITY", "@Bot_Colony", "@Found_Us"]
+FORCE_JOIN_CHANNELS = ["@FALCON_SECURITY", "@Bot_Colony"]
 FORCE_JOIN_GROUPS = ["@Indian_Hacker_Group"]
 
 # Dictionary to store authorized users
@@ -46,24 +53,41 @@ def is_user_member(user_id):
             return False
     return True
 
-# Welcome message
+# Log user actions to MongoDB
+def log_user_action(user_id, action):
+    log_entry = {
+        'user_id': user_id,
+        'action': action,
+        'timestamp': datetime.utcnow()
+    }
+    logs_collection.insert_one(log_entry)
+
+# Welcome message with inline button layout
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    markup = telebot.types.InlineKeyboardMarkup()
-    
+    markup = telebot.types.InlineKeyboardMarkup(row_width=2)
+
     # Add inline buttons for each channel and group
-    for channel in FORCE_JOIN_CHANNELS:
-        button = telebot.types.InlineKeyboardButton(channel, url=f'https://t.me/{channel[1:]}')
-        markup.add(button)
-    for group in FORCE_JOIN_GROUPS:
-        button = telebot.types.InlineKeyboardButton(group, url=f'https://t.me/{group[1:]}')
-        markup.add(button)
-    
+    buttons = [
+        telebot.types.InlineKeyboardButton("FALCON SECURITY", url='https://t.me/FALCON_SECURITY'),
+        telebot.types.InlineKeyboardButton("BOT COLONY", url='https://t.me/Bot_Colony'),
+        telebot.types.InlineKeyboardButton("INDIAN HACKER", url='https://t.me/Indian_Hacker_Group'),
+        telebot.types.InlineKeyboardButton("INDIAN HACKER GROUP", url='https://t.me/Indian_Hacker_Group')
+    ]
+
+    # Arrange buttons in the specified format
+    markup.add(buttons[0], buttons[1])  # Button1 : Button2
+    markup.add(buttons[2], buttons[3])  # Button3 : Button4
+
     # Add a verification button
-    verify_button = telebot.types.InlineKeyboardButton("Verify", callback_data='verify')
+    verify_button = telebot.types.InlineKeyboardButton("VERIFY", callback_data='verify')
     markup.add(verify_button)
-    
-    bot.send_message(message.chat.id, "Please join all the required channels and groups first. After joining, click the 'Verify' button.", reply_markup=markup)
+
+    # Send the image with the message
+    bot.send_photo(message.chat.id, photo='https://i.ibb.co/Jcf4gyy/20240126-165040-0000.png', caption="Please join all the required channels and groups first. After joining, click the 'VERIFY' button.", reply_markup=markup)
+
+    # Log the start command
+    log_user_action(message.from_user.id, 'started_bot')
 
 # Verify button callback
 @bot.callback_query_handler(func=lambda call: call.data == 'verify')
@@ -73,8 +97,9 @@ def verify_user(call):
         bot.send_message(call.message.chat.id, "Thank you for joining all the required channels and groups! You can now use the bot. Use /help to see available commands.")
         # Optionally, add the user to the authorized list if you want to
         authorized_users.add(user_id)
+        log_user_action(user_id, 'verified')
     else:
-        bot.send_message(call.message.chat.id, "Please join all the required channels and groups first before clicking 'Verify'.")
+        bot.send_message(call.message.chat.id, "Please join all the required channels and groups first before clicking 'VERIFY'.")
     bot.answer_callback_query(call.id)
 
 # Help command
@@ -175,6 +200,7 @@ def add_user(message):
             user_id = message.text.split(' ', 1)[1]
             authorized_users.add(int(user_id))
             bot.reply_to(message, "User {} has been added.".format(user_id))
+            log_user_action(message.from_user.id, 'added_user')
         else:
             bot.reply_to(message, "Please provide the user ID to add. Example: /add user_id")
     else:
@@ -189,6 +215,7 @@ def remove_user(message):
             if int(user_id) in authorized_users:
                 authorized_users.remove(int(user_id))
                 bot.reply_to(message, "User {} has been removed.".format(user_id))
+                log_user_action(message.from_user.id, 'removed_user')
             else:
                 bot.reply_to(message, "User {} is not in the authorized list.".format(user_id))
         else:
@@ -205,6 +232,7 @@ def broadcast_message(message):
             for user_id in authorized_users:
                 bot.send_message(user_id, text)
             bot.reply_to(message, "Broadcast sent to {} users.".format(len(authorized_users)))
+            log_user_action(message.from_user.id, 'broadcasted_message')
         else:
             bot.reply_to(message, "Please provide a message to broadcast. Example: /broadcast your_message_here")
     else:
