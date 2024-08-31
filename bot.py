@@ -187,7 +187,7 @@ def send_search_results(chat_id, user_id, file_path):
         
         if end_index < RESULTS_PER_USER:
             markup = telebot.types.InlineKeyboardMarkup()
-            more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more_{file_path}_{user_id}')
+            more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more_{file_path}_{end_index}_{user_id}')
             markup.add(more_button)
             bot.send_message(chat_id, "Click 'More' for additional results.", reply_markup=markup)
         
@@ -198,12 +198,44 @@ def send_search_results(chat_id, user_id, file_path):
 # Handle 'More' button callback
 @bot.callback_query_handler(func=lambda call: call.data.startswith('more_'))
 def handle_more_results(call):
-    file_path, user_id = call.data[5:].split('_', 1)
-    user_id = int(user_id)
-    
-    if user_id in user_search_results and user_search_results[user_id]['file_path'] == file_path:
-        send_search_results(call.message.chat.id, user_id, file_path)
+    try:
+        file_path, start_index, user_id = call.data[5:].split('_', 2)
+        user_id = int(user_id)
+        start_index = int(start_index)
+        
+        if user_id in user_search_results and user_search_results[user_id]['file_path'] == file_path:
+            with open(file_path, 'r') as file:
+                lines = file.readlines()
+
+            user_data = user_search_results[user_id]
+            end_index = min(start_index + RESULTS_PER_PAGE, RESULTS_PER_USER)
+            results_to_send = lines[start_index:end_index]
+
+            response = "Search results:\n"
+            for i, result in enumerate(results_to_send, start=start_index + 1):
+                response += "{}. {}\n".format(i, result.strip())
+
+            # Send results in chunks if the response is too long
+            for i in range(0, len(response), MAX_MESSAGE_LENGTH):
+                bot.send_message(call.message.chat.id, response[i:i + MAX_MESSAGE_LENGTH])
+            
+            user_data['index'] = end_index
+            user_search_results[user_id] = user_data
+            
+            if end_index < RESULTS_PER_USER:
+                markup = telebot.types.InlineKeyboardMarkup()
+                more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more_{file_path}_{end_index}_{user_id}')
+                markup.add(more_button)
+                bot.send_message(call.message.chat.id, "Click 'More' for additional results.", reply_markup=markup)
+            
+            # Update file to remove sent results
+            with open(file_path, 'w') as file:
+                file.writelines(lines[end_index:])
+        
         bot.answer_callback_query(call.id)
+    except Exception as e:
+        print(f"Error handling 'More' callback: {e}")
+        bot.answer_callback_query(call.id, text="Failed to load more results.")
 
 # Command handler to convert search results to a text file
 @bot.message_handler(commands=['txt'])
