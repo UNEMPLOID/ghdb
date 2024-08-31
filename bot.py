@@ -63,10 +63,10 @@ def log_user_action(user_id, action, extra_info=""):
         'user_id': user_id,
         'action': action,
         'extra_info': extra_info,
-        'timestamp': datetime.now(datetime.timezone.utc)  # Updated to use timezone-aware datetime
+        'timestamp': datetime.utcnow()  # Use utcnow() to get current UTC time
     }
     logs_collection.insert_one(log_entry)
-    log_message = f"Action: {action}\nUser ID: {user_id}\nExtra Info: {extra_info}\nTimestamp: {datetime.now(datetime.timezone.utc)}"  # Updated to use timezone-aware datetime
+    log_message = f"Action: {action}\nUser ID: {user_id}\nExtra Info: {extra_info}\nTimestamp: {datetime.utcnow()}"  # Use utcnow() for timestamp
     bot.send_message(LOG_GROUP_ID, log_message)
 
 # Welcome message with inline button layout
@@ -142,12 +142,11 @@ def search_google(message):
             return
 
         query = message.text.split(' ', 1)[1]
-        file_path = f"search_results_{query}.txt"
-        safe_file_path = urllib.parse.quote(file_path)  # Encode file path
+        file_path = f"search_results_{urllib.parse.quote(query)}.txt"
 
         if os.path.exists(file_path):
             # File exists, load and send results
-            send_search_results(message.chat.id, message.from_user.id, safe_file_path)
+            send_search_results(message.chat.id, message.from_user.id, file_path)
         else:
             # Perform search and save to file
             results = list(search(query, num_results=TOTAL_RESULTS))
@@ -157,18 +156,16 @@ def search_google(message):
 
             user_search_results[message.from_user.id] = {
                 'query': query,
-                'file_path': safe_file_path,
+                'file_path': file_path,
                 'index': 0
             }
 
-            send_search_results(message.chat.id, message.from_user.id, safe_file_path)
+            send_search_results(message.chat.id, message.from_user.id, file_path)
             log_user_action(message.from_user.id, 'searched', f"Query: {query}")
     else:
         bot.reply_to(message, "You are not authorized to use this command.")
 
-def send_search_results(chat_id, user_id, safe_file_path):
-    file_path = urllib.parse.unquote(safe_file_path)  # Decode file path
-
+def send_search_results(chat_id, user_id, file_path):
     if os.path.exists(file_path):
         with open(file_path, 'r') as file:
             lines = file.readlines()
@@ -191,7 +188,7 @@ def send_search_results(chat_id, user_id, safe_file_path):
         
         if end_index < RESULTS_PER_USER:
             markup = telebot.types.InlineKeyboardMarkup()
-            more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more:{safe_file_path}:{end_index}:{user_id}')
+            more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more:{urllib.parse.quote(file_path)}:{end_index}:{user_id}')
             markup.add(more_button)
             bot.send_message(chat_id, "Click 'More' for additional results.", reply_markup=markup)
         
@@ -213,7 +210,7 @@ def handle_more_results(call):
 
         file_path = urllib.parse.unquote(safe_file_path)  # Decode file path
         
-        if user_id in user_search_results and user_search_results[user_id]['file_path'] == safe_file_path:
+        if user_id in user_search_results and user_search_results[user_id]['file_path'] == file_path:
             with open(file_path, 'r') as file:
                 lines = file.readlines()
 
@@ -234,7 +231,7 @@ def handle_more_results(call):
             
             if end_index < RESULTS_PER_USER:
                 markup = telebot.types.InlineKeyboardMarkup()
-                more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more:{safe_file_path}:{end_index}:{user_id}')
+                more_button = telebot.types.InlineKeyboardButton("More", callback_data=f'more:{urllib.parse.quote(file_path)}:{end_index}:{user_id}')
                 markup.add(more_button)
                 bot.send_message(call.message.chat.id, "Click 'More' for additional results.", reply_markup=markup)
             
@@ -311,7 +308,7 @@ def fetch_txt(message):
             return
 
         query = message.text.split(' ', 1)[1]
-        file_path = f"search_results_{query}.txt"
+        file_path = f"search_results_{urllib.parse.quote(query)}.txt"
 
         if os.path.exists(file_path):
             with open(file_path, 'r') as file:
