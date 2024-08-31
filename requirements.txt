@@ -1,4 +1,4 @@
-pytz
+pytz==2024.1
 pymongo[srv]
 dnspython
 pymongo==4.1.1
