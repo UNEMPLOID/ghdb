@@ -18,7 +18,7 @@ bot = telebot.TeleBot('7261872696:AAEH1K74ieC8mLSyt7Uj2H1w_DBSnchEto4')
 OWNER_ID = 5460343986
 
 # Channel and group usernames
-FORCE_JOIN_CHANNELS = ["@FALCON_SECURITY", "QuantumEthics", "@Bot_Colony"]
+FORCE_JOIN_CHANNELS = ["@FALCON_SECURITY", "@QuantumEthics", "@Bot_Colony"]
 FORCE_JOIN_GROUPS = ["@Indian_Hacker_Group"]
 
 # Group ID for logging
