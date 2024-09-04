@@ -78,7 +78,7 @@ def send_welcome(message):
     buttons = [
         telebot.types.InlineKeyboardButton("FALCON SECURITY", url='https://t.me/FALCON_SECURITY'),
         telebot.types.InlineKeyboardButton("BOT COLONY", url='https://t.me/Bot_Colony'),
-        telebot.types.InlineKeyboardButton("QuantumEthics", url='QuantumEthics'),
+        telebot.types.InlineKeyboardButton("QuantumEthics", url='https://t.me/QuantumEthics'),
         telebot.types.InlineKeyboardButton("INDIAN HACKER GROUP", url='https://t.me/Indian_Hacker_Group')
     ]
     
