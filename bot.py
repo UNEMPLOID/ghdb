@@ -46,15 +46,19 @@ def is_user_member(user_id):
             member_status = bot.get_chat_member(channel, user_id).status
             if member_status not in ['member', 'administrator', 'creator']:
                 return False
-        except:
+        except Exception as e:
+            print(f"Error checking membership in channel {channel}: {e}")
             return False
+
     for group in FORCE_JOIN_GROUPS:
         try:
             member_status = bot.get_chat_member(group, user_id).status
             if member_status not in ['member', 'administrator', 'creator']:
                 return False
-        except:
+        except Exception as e:
+            print(f"Error checking membership in group {group}: {e}")
             return False
+
     return True
 
 # Log user actions to MongoDB and log group
@@ -63,10 +67,10 @@ def log_user_action(user_id, action, extra_info=""):
         'user_id': user_id,
         'action': action,
         'extra_info': extra_info,
-        'timestamp': datetime.utcnow()  # Use utcnow() to get current UTC time
+        'timestamp': datetime.utcnow()
     }
     logs_collection.insert_one(log_entry)
-    log_message = f"Action: {action}\nUser ID: {user_id}\nExtra Info: {extra_info}\nTimestamp: {datetime.utcnow()}"  # Use utcnow() for timestamp
+    log_message = f"Action: {action}\nUser ID: {user_id}\nExtra Info: {extra_info}\nTimestamp: {datetime.utcnow()}"
     bot.send_message(LOG_GROUP_ID, log_message)
 
 # Welcome message with inline button layout
@@ -253,8 +257,9 @@ def add_user(message):
             authorized_users.add(user_id)
             bot.reply_to(message, f"User {user_id} has been added to the authorized list.")
             log_user_action(message.from_user.id, 'added_user', f"User ID: {user_id}")
-        except (IndexError, ValueError):
+        except (IndexError, ValueError) as e:
             bot.reply_to(message, "Please provide a valid user ID.")
+            print(f"Error adding user: {e}")
     else:
         bot.reply_to(message, "You are not authorized to use this command.")
 
@@ -264,11 +269,15 @@ def remove_user(message):
     if message.from_user.id == OWNER_ID:
         try:
             user_id = int(message.text.split()[1])
-            authorized_users.discard(user_id)
-            bot.reply_to(message, f"User {user_id} has been removed from the authorized list.")
-            log_user_action(message.from_user.id, 'removed_user', f"User ID: {user_id}")
-        except (IndexError, ValueError):
+            if user_id in authorized_users:
+                authorized_users.remove(user_id)
+                bot.reply_to(message, f"User {user_id} has been removed from the authorized list.")
+                log_user_action(message.from_user.id, 'removed_user', f"User ID: {user_id}")
+            else:
+                bot.reply_to(message, f"User {user_id} is not in the authorized list.")
+        except (IndexError, ValueError) as e:
             bot.reply_to(message, "Please provide a valid user ID.")
+            print(f"Error removing user: {e}")
     else:
         bot.reply_to(message, "You are not authorized to use this command.")
 
@@ -276,32 +285,24 @@ def remove_user(message):
 @bot.message_handler(commands=['broadcast'])
 def broadcast_message(message):
     if message.from_user.id == OWNER_ID:
-        try:
-            broadcast_message_text = ' '.join(message.text.split()[1:])
-            for user_id in authorized_users:
-                try:
-                    bot.send_message(user_id, broadcast_message_text)
-                except Exception as e:
-                    print(f"Failed to send message to {user_id}: {e}")
-            bot.reply_to(message, "Broadcast message sent to all authorized users.")
-            log_user_action(message.from_user.id, 'broadcasted_message', f"Message: {broadcast_message_text}")
-        except IndexError:
-            bot.reply_to(message, "Please provide a message to broadcast.")
+        msg = ' '.join(message.text.split()[1:])
+        for user_id in authorized_users:
+            try:
+                bot.send_message(user_id, msg)
+            except Exception as e:
+                print(f"Error sending broadcast to {user_id}: {e}")
+        bot.reply_to(message, "Message broadcasted to all authorized users.")
+        log_user_action(message.from_user.id, 'broadcasted_message', f"Message: {msg}")
     else:
         bot.reply_to(message, "You are not authorized to use this command.")
 
-# Show all authorized users (Owner only)
-@bot.message_handler(commands=['users'])
-def list_users(message):
-    if message.from_user.id == OWNER_ID:
-        users_list = "\n".join(str(user_id) for user_id in authorized_users)
-        bot.reply_to(message, f"Authorized users:\n{users_list}")
-    else:
-        bot.reply_to(message, "You are not authorized to use this command.")
-
-# Command to fetch search results in TXT format
+# Get search results in TXT format
 @bot.message_handler(commands=['txt'])
-def fetch_txt(message):
+def get_txt_results(message):
+    if not is_user_member(message.from_user.id):
+        bot.reply_to(message, "You must join the required channels and groups to use this bot.")
+        return
+
     if message.from_user.id in authorized_users:
         if len(message.text.split()) == 1:
             bot.reply_to(message, "Please provide a query to search.")
@@ -312,18 +313,23 @@ def fetch_txt(message):
 
         if os.path.exists(file_path):
             with open(file_path, 'r') as file:
-                lines = file.readlines()
-            
-            response = "Search results:\n" + ''.join(lines)
-            
-            for i in range(0, len(response), MAX_MESSAGE_LENGTH):
-                bot.send_message(message.chat.id, response[i:i + MAX_MESSAGE_LENGTH])
-            
-            log_user_action(message.from_user.id, 'txt_search', f"Query: {query}")
+                result_text = file.read()
+            bot.send_document(message.chat.id, document=open(file_path, 'rb'))
+            log_user_action(message.from_user.id, 'retrieved_txt_results', f"Query: {query}")
         else:
-            bot.reply_to(message, "No results found for the given query.")
+            bot.reply_to(message, "No results found. Please perform a search first.")
     else:
         bot.reply_to(message, "You are not authorized to use this command.")
 
-# Polling loop to keep the bot running
+# Show all authorized users (Owner only)
+@bot.message_handler(commands=['users'])
+def show_users(message):
+    if message.from_user.id == OWNER_ID:
+        users_list = '\n'.join(str(user_id) for user_id in authorized_users)
+        bot.reply_to(message, f"Authorized users:\n{users_list}")
+        log_user_action(message.from_user.id, 'viewed_authorized_users')
+    else:
+        bot.reply_to(message, "You are not authorized to use this command.")
+
+# Start polling
 bot.polling(none_stop=True)
